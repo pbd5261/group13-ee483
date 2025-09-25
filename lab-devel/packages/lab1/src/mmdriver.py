@@ -13,11 +13,11 @@ class Driver():#CHANGE CLASSNAME to the name of your class
         # THIS WILL BE USEFUL TO SPECIFY THE NAME OF THE TOPIC
         
         # INITIALIZE YOUR VARIABLES HERE (SUBSCRIBERS OR PUBLISHERS)
-        self.state = "forward"
+        self.state = "init"
         self.turn_number = 0
         self.stop_time = 5
-        self.forward_time = 4
-        self.turn_time = 1
+        self.forward_time = 2.25
+        self.turn_time = 1.25
     
     def drive(self): # CHANGE TO THE NAME OF YOUR FUNCTION
         
@@ -25,33 +25,40 @@ class Driver():#CHANGE CLASSNAME to the name of your class
         cmd_1 = WheelsCmdStamped()
         cmd_1.header.stamp = rospy.Time.now()
 
-
-        if self.state == "stopped":
+        if self.state == "init":
+            rospy.sleep(10)
+            cmd_1.vel_left = 0
+            cmd_1.vel_right = 0
+            rospy.sleep(self.forward_time)
+            self.state = "forward"
+        elif self.state == "stopped":
             rospy.sleep(self.forward_time)
             cmd_1.vel_left = 0
             cmd_1.vel_right = 0
             
             self.state = "turn"
 
+        elif self.turn_number >= 3:
+            cmd_1.vel_right = 0
+            cmd_1.vel_left = 0
+            self.state = "end"
+
         elif self.state == "forward":
             rospy.sleep(self.turn_time)
-            cmd_1.vel_right = 0.35
+            cmd_1.vel_right = 0.5
             cmd_1.vel_left = 0.5
             
             self.state = "stopped"
 
-        elif (self.state == "turn") and (self.turn_number < 4):
+        elif (self.state == "turn") and (self.turn_number < 3):
             rospy.sleep(self.stop_time)
-            cmd_1.vel_right = -0.3
-            cmd_1.vel_left = 0.3
+            cmd_1.vel_right = -0.4
+            cmd_1.vel_left = 0.4
             
             self.turn_number = self.turn_number + 1
             self.state = "forward"
 
-        elif self.turn_number >= 4:
-            cmd_1.vel_right = 0
-            cmd_1.vel_left = 0
-            self.state = "end"
+        
 
         print("Current State:" + self.state) # Just for testin
         self.pub.publish(cmd_1)
