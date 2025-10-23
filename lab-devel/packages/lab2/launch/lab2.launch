@@ -1,0 +1,9 @@
+<launch>
+
+<node pkg="lab2" name="crop" type="Crop.py"/>
+<node pkg="lab2" name="lab2test" type="lanedetector.py"/>
+<!-- <node pkg="rqt_image_view" type="rqt_image_view" name="image" args="/image"/>
+<node pkg="rqt_image_view" type="rqt_image_view" name="image_view_cropped" args="/image_cropped"/>
+<node pkg="rqt_image_view" type="rqt_image_view" name="image_white_filter" args="/image_white"/> -->
+
+</launch>
