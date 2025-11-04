@@ -1,0 +1,8 @@
+<launch>
+
+<node pkg="duckietown_pkg" name="lab2test" type="lane_detector.py"/>
+<!-- <node pkg="rqt_image_view" type="rqt_image_view" name="image" args="/image"/>
+<node pkg="rqt_image_view" type="rqt_image_view" name="image_view_cropped" args="/image_cropped"/>
+<node pkg="rqt_image_view" type="rqt_image_view" name="image_white_filter" args="/image_white"/> -->
+
+</launch>
