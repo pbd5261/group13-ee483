@@ -1,5 +1,6 @@
 <launch>
 
+
     <arg name="veh" default="$(env VEHICLE_NAME)"/>
     <arg name="ai_trafo_mode" default="cb" doc="'cb' for colo balance only; 'both' for color balance and linear trafo"/>
     <arg name="ai_interval" default="5" doc="interval with which the linear trafo gets updated. color balance is performed every second."/>
@@ -52,7 +53,13 @@
 		<node pkg = "lab3" type = "line_detector.py" name = "line_detection" output = "screen"/>
 
 		<!-- Add your controller and odometry nodes below -->
-        <node pkg="lab3" name="lanedetector" type="lanedetector.py" output = "screen"/>
+        <node pkg="lab3" name="lanecontrol" type="lanecontrol.py" output = "screen"/>
+
+        <param name = "controller_ready" type="string" value = "false"/>
+        <param name="K" type="double" value="4.0"/>
+        <param name="Ki" type="double" value="0.01"/>
+        <param name="Kd" type="double" value="0.1"/>
+        <param name="v" type="double" value="0.0"/>
 
     </group>
 

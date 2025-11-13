@@ -1,86 +1,260 @@
 #!/usr/bin/env python3
-
 import sys
 import rospy
 import cv2
-from sensor_msgs.msg import Image
-from sensor_msgs.msg import CompressedImage
-from cv_bridge import CvBridge
+import matplotlib
 import numpy as np
+import os
+from message_filters import ApproximateTimeSynchronizer, Subscriber
+from duckietown_msgs.msg import Segment, SegmentList, Vector2D
+from sensor_msgs.msg import Image, CompressedImage
+from cv_bridge import CvBridge
+from std_srvs.srv import SetBool, SetBoolResponse
 
-class lanedetector:
+
+
+class ImageProcessor: 
     def __init__(self):
         # Instatiate the converter class once by using a class member
+        rospy.Service('line_detector_node/switch', SetBool, self.ld_switch)
+        rospy.Service('lane_filter_node/switch',SetBool, self.lf_switch)
         self.bridge = CvBridge()
-        rospy.Subscriber("ee483mm13/camera_node/image/compressed", CompressedImage, self.callback, queue_size = 1, buff_size = 1000000)
-        self.pub = rospy.Publisher("final_image", Image, queue_size=10)
-
-
-    def callback(self, msg):
-
-        #Pulling image from ROS msg to cv format
-        cv_img = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
-        #Getting image height
-        height = cv_img.shape[0]
-        # Calculate the midpoint
-        midpoint = int(height * 0.3)
-        # Crop the image to keep only the bottom 70%
-        cropped_img = cv_img[midpoint:, :]
-      
-        #Convert image from BGR to HSV
-        hsv_image = cv2.cvtColor(cropped_img, cv2.COLOR_BGR2HSV)
-        #Finds all pixels within the given range. In this scenario its red
-        white_mask = cv2.inRange(hsv_image, (70,0,145),(140,120,255))
-        yellow_mask = cv2.inRange(hsv_image, (21,0,97), (97,174,198))
-
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-        # Kernel size
-        image_erode = cv2.erode(yellow_mask, kernel)
-        # Apply erosion to image
-        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
-        yellow_dilate = cv2.dilate(image_erode, kernel)
-
-
-        cv_img_canny = cv2.Canny(cropped_img, 50,400)
-
-        #combine image edge detecton image with mask
-        edges_white = cv2.bitwise_and(cv_img_canny,white_mask)
-        edges_yellow = cv2.bitwise_and(cv_img_canny,yellow_dilate)
-
-        #publish image
-        #ros_image_edges = self.bridge.cv2_to_imgmsg(output_image_edges, "mono8")
-        #self.pub.publish(ros_image_edges)
+        veh_name = os.environ['VEHICLE_NAME']
+        rospy.Subscriber(f"/{veh_name}/camera_node/image/compressed", CompressedImage, self.processor, queue_size=1, buff_size= 2**24)
+        #rospy.Subscriber("image", Image, self.processor, queue_size=1, buff_size= 2**24)
+        self.pub_edges = rospy.Publisher("image_edges", Image, queue_size=10)
+        self.pub_yellow_mask = rospy.Publisher("image_mask_yellow", Image, queue_size=10)
+        self.pub_red_mask = rospy.Publisher("image_mask_red", Image, queue_size=10)
+        self.pub_white_mask = rospy.Publisher("image_mask_white", Image, queue_size=10)
+        self.pub_yellow_lines = rospy.Publisher("image_lines_yellow", Image, queue_size=10)
+        self.pub_red_lines = rospy.Publisher("image_lines_red", Image, queue_size=10)
+        self.pub_white_lines = rospy.Publisher("image_lines_white", Image, queue_size=10)
+        self.pub_lines = rospy.Publisher("image_lines", Image, queue_size=10)
+        self.pub_segments = rospy.Publisher("line_detector_node/segment_list", SegmentList, queue_size=10)
         
-        #perform hough transform on combined images
-        lines_white = cv2.HoughLinesP(edges_white,1,np.pi/180,10,minLineLength=2,maxLineGap=10)
-        lines_yellow = cv2.HoughLinesP(edges_yellow,1,np.pi/180,10,minLineLength=2,maxLineGap=10)
+        #variables used in class
+        self.hsv_image = None
+        self.cv_img = None
+        self.cv_crop = None
+        self.white_mask = None
+        self.yellow_mask = None
+        self.red_mask = None
 
-        #draw lines on Hough transform 
-        img_combined_white = self.output_lines(cropped_img,lines_white, "white")
-        img_combined_white_yellow = self.output_lines(img_combined_white,lines_yellow, "yellow")
+    def processor(self, msg):
+        self.cv_img = self.bridge.compressed_imgmsg_to_cv2(msg, "bgr8")
+        #self.cv_img = self.bridge.imgmsg_to_cv2(msg, "bgr8")
+        self.crop() #Crop Image
+        self.hsv_image = cv2.cvtColor(self.cv_crop, cv2.COLOR_BGR2HSV)
+        self.white_filter() #Create white filter
+        self.yellow_filter() #create yellow filter
+        self.red_filter()
+        self.segment() #Create segments from filters
 
-        #publish image
-        ros_image_final = self.bridge.cv2_to_imgmsg(img_combined_white_yellow, "bgr8")
-        self.pub.publish(ros_image_final)
+    # DO NOT CHANGE THIS FUNCTION
+    def crop(self):
+        image_size = (160, 120)
+        offset = 40
+        new_image = cv2.resize(self.cv_img, image_size, interpolation=cv2.INTER_NEAREST)
+        self.cv_crop= new_image[offset:, :]
 
-    def output_lines(self, original_image, lines, color):
-            output = np.copy(original_image)
-            if lines is not None:
-                for i in range(len(lines)):
-                    l = lines[i][0]
-                    if color == "white":
-                        cv2.line(output, (l[0],l[1]),(l[2],l[3]), (255,0,0), 2, cv2.LINE_AA)
-                    elif color == "yellow":
-                        cv2.line(output, (l[0],l[1]),(l[2],l[3]), (255,255,0), 2, cv2.LINE_AA)
-                    
-                    cv2.circle(output, (l[0],l[1]), 2, (0,255,0))
-                    cv2.circle(output, (l[2],l[3]), 2, (0,0,255))
-            return output
+    def white_filter(self):
+        #Finds all pixels within the given range. In this scenario its red
+        # CHANGE TO YOUR VALUES
+
+        mask = cv2.inRange(self.hsv_image, (70,0,145),(140,120,255))
+        # mask2 = cv2.inRange(self.hsv_image, (13,0,154),(33,255,255))
+        # mask = cv2.bitwise_or(mask,mask2)
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+        # image_erode = cv2.erode(red_part, kernel)
+        image_erode = cv2.erode(mask, kernel)
+        image_dilate = cv2.dilate(image_erode, kernel2)
+        self.white_mask = image_dilate
+        #Converting image from cv format to ROS msg using 
+        white_mask = self.bridge.cv2_to_imgmsg(self.white_mask, "mono8")
+        #publishing cropped image
+        self.pub_white_mask.publish(white_mask)
 
 
+    def yellow_filter(self):
+        # CHANGE VALUES IF NEEDED
+        #Finds all pixels within the given range. In this scenario its red
+        mask = cv2.inRange(self.hsv_image, (20,33,100), (86,176,222))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+        # image_erode = cv2.erode(red_part, kernel)
+        image_erode = cv2.erode(mask, kernel)
+        image_dilate = cv2.dilate(image_erode, kernel2)
+        self.yellow_mask = image_dilate
+        #Converting image from cv format to ROS msg using 
+        white_mask = self.bridge.cv2_to_imgmsg(self.yellow_mask, "mono8")
+        #publishing cropped image
+
+        self.pub_yellow_mask.publish(white_mask)
+
+    def red_filter(self):
+        # CHANGE VALUES IF NEEDED
+        #Finds all pixels within the given range. In this scenario its red
+        mask = cv2.inRange(self.hsv_image, (0,110,180), (180,163,255))
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
+        kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
+        # image_erode = cv2.erode(red_part, kernel)
+        image_erode = cv2.erode(mask, kernel)
+        image_dilate = cv2.dilate(image_erode, kernel2)
+        self.red_mask = image_dilate
+        #Converting image from cv format to ROS msg using 
+        white_mask = self.bridge.cv2_to_imgmsg(self.red_mask, "mono8")
+        #publishing cropped image
+
+        self.pub_red_mask.publish(white_mask)
+
+    def segment(self):
+        #Convert image from BGR to HSV
+        # CHANGE VALUES TO YOUR VALUES
+
+        edges = cv2.Canny(self.cv_crop, 100, 200)
+
+        #Combinining edges with mask white 
+        edges_white = cv2.bitwise_and(edges,self.white_mask)
+        ros_edges = self.bridge.cv2_to_imgmsg(edges_white, "mono8")
+        self.pub_white_lines.publish(ros_edges)
+
+        #Combinining edges with mask yellow 
+        edges_yellow = cv2.bitwise_and(edges,self.yellow_mask)
+        ros_edges = self.bridge.cv2_to_imgmsg(edges_yellow, "mono8")
+        self.pub_yellow_lines.publish(ros_edges)
+
+        edges_red = cv2.bitwise_and(edges,self.red_mask)
+        ros_edges = self.bridge.cv2_to_imgmsg(edges_red, "mono8")
+        self.pub_red_lines.publish(ros_edges)
+
+        
+        #Finding Line Segments
+        # CHANGE VALUES TO YOUR VALUES
+        hough_white = cv2.HoughLinesP(edges_white, 1, np.pi / 180, 10,minLineLength=20,maxLineGap=3)
+        
+        # CHANGE VALUES IF NEEDED 
+        hough_yellow = cv2.HoughLinesP(edges_yellow, 1, np.pi / 180, 0,minLineLength=20,maxLineGap=10)
+
+        hough_red = cv2.HoughLinesP(edges_red, 1, np.pi / 180, 0,minLineLength=20,maxLineGap=10)
+
+        # DO NOT CHANGE
+        #Publish and  Segments
+        final_lines = self.output_lines(self.cv_crop,hough_white,hough_yellow,hough_red)
+        ros_lines = self.bridge.cv2_to_imgmsg(final_lines, "bgr8")
+        self.pub_lines.publish(ros_lines)
+        self.convert_lines(hough_white,hough_yellow,hough_red)
+
+
+    def convert_lines(self,lines_white,lines_yellow,lines_red):
+        if lines_white is not None:
+            lines_reshaped =lines_white.reshape((-1,4))
+        else:
+            lines_reshaped =[]
+        if lines_yellow is not None:
+            lines_reshaped_yellow =lines_yellow.reshape((-1,4))
+        else:
+            lines_reshaped_yellow =[]
+        if lines_red is not None:
+            lines_reshaped_red =lines_red.reshape((-1,4))
+        else:
+            lines_reshaped_red =[]
+        offset = 40
+        image_size = (160,120)
+        arr_cutoff = np.array([0,offset, 0, offset])
+        arr_ratio = np.array([([1. /image_size[0], 1. /image_size[1], 1. /image_size[0], 1. /image_size[1]])])
+        if lines_white is not None:
+            line_normalized_white = (lines_reshaped + arr_cutoff) * arr_ratio
+        else:
+            line_normalized_white= np.empty(shape= [0,0,])
+            
+        if lines_yellow is not None:
+            line_normalized_yellow = (lines_reshaped_yellow + arr_cutoff) * arr_ratio
+        else:
+            line_normalized_yellow= np.empty(shape= [0,0,])
+
+        if lines_red is not None:
+            line_normalized_red = (lines_reshaped_red + arr_cutoff) * arr_ratio
+        else:
+            line_normalized_red= np.empty(shape= [0,0,])
+        
+        Line_List = SegmentList()
+        Line_Array = []
+        # print(line_normalized_white)
+        for i in range(line_normalized_white.shape[0]):
+        # for i in range(1):
+
+            line = Segment()
+            line.color = line.WHITE
+            Initial_Line = Vector2D(line_normalized_white[i,0], line_normalized_white[i,1] )
+            End_Line = Vector2D(line_normalized_white[i,2], line_normalized_white[i,3] )
+            line.pixels_normalized[0] = Initial_Line
+            line.pixels_normalized[1] = End_Line
+            Line_Array.append(line)
+        for i in range(line_normalized_yellow.shape[0]):
+        # for i in range(1):
+
+            line = Segment()
+            line.color = line.YELLOW
+            Initial_Line = Vector2D(line_normalized_yellow[i,0], line_normalized_yellow[i,1] )
+            End_Line = Vector2D(line_normalized_yellow[i,2], line_normalized_yellow[i,3] )
+            line.pixels_normalized[0] = Initial_Line
+            line.pixels_normalized[1] = End_Line
+            Line_Array.append(line)
+
+        for i in range(line_normalized_red.shape[0]):
+        # for i in range(1):
+
+            line = Segment()
+            line.color = line.RED
+            Initial_Line = Vector2D(line_normalized_red[i,0], line_normalized_red[i,1] )
+            End_Line = Vector2D(line_normalized_red[i,2], line_normalized_red[i,3] )
+            line.pixels_normalized[0] = Initial_Line
+            line.pixels_normalized[1] = End_Line
+            Line_Array.append(line)
+
+        Line_List.segments= Line_Array
+        Line_List.header.stamp = rospy.Time.now()
+        self.pub_segments.publish(Line_List)
+
+
+    def output_lines(self, original_image, lines,lines_yellow,lines_red):
+        output = np.copy(original_image)
+        if lines is not None:
+            for i in range(len(lines)):
+                l = lines[i][0]
+                cv2.line(output, (l[0],l[1]), (l[2],l[3]), (255,0,0), 2, cv2.LINE_AA)
+                cv2.circle(output, (l[0],l[1]), 2, (0,255,0))
+                cv2.circle(output, (l[2],l[3]), 2, (0,0,255))
+        if lines_yellow is not None:
+            for i in range(len(lines_yellow)):
+                l = lines_yellow[i][0]
+                cv2.line(output, (l[0],l[1]), (l[2],l[3]), (0,0,255), 2, cv2.LINE_AA)
+                cv2.circle(output, (l[0],l[1]), 2, (0,255,0))
+                cv2.circle(output, (l[2],l[3]), 2, (0,255,255))
+        if lines_red is not None:
+            for i in range(len(lines_red)):
+                l = lines_red[i][0]
+                cv2.line(output, (l[0],l[1]), (l[2],l[3]), (0,0,255), 2, cv2.LINE_AA)
+                cv2.circle(output, (l[0],l[1]), 2, (0,255,0))
+                cv2.circle(output, (l[2],l[3]), 2, (0,255,255))
+        return output
+       
+       
+    
+    def ld_switch(self,msg):
+        return True,""
+    
+    def lf_switch(self,msg):
+        return True,""
+
+
+
+
+        
 
 if __name__=="__main__":
     # initialize our node and create a publisher as normal
-    rospy.init_node("white_filter", anonymous=True)
-    img_filter = lanedetector()
+    rospy.init_node("ImageProcessor", anonymous=True)
+    ImageProcessor()
     rospy.spin()
