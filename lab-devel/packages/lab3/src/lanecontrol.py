@@ -23,7 +23,12 @@ class LaneDetector:
         self.pub_phi = rospy.Publisher("avg_phi", Float32, queue_size=32)
         self.car_cmd = Twist2DStamped()
 
-        rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.dynamic_PID)
+        self.state = rospy.get_param("stateIsStatic")
+        if self.state == "True":
+            rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.static_PID)
+        else:
+            rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.dynamic_PID)
+
         self.pub = rospy.Publisher("control_input", Float32, queue_size=10)
         self.total_error = 0
         self.prev_error = 0
@@ -32,6 +37,9 @@ class LaneDetector:
         self.Kd = rospy.get_param("Kd")
         self.v = rospy.get_param("v")
         self.prev_time = rospy.Time.now().to_sec()
+
+        self.newPhi = 0
+        self.temp = 0
         
  
     def callback(self,phi):
@@ -39,40 +47,42 @@ class LaneDetector:
 
 
     def movingAvg(self, phi):
-        newPhi = 0
-        temp = 0
-        for temp in range(5):
-            newPhi = newPhi + phi
-            temp = temp + 1
-        newPhi = newPhi/5
-        self.pub_phi.publish(newPhi)
+
+
+        self.newPhi = self.newPhi + phi
+        self.temp = self.temp + 1
+        if self.temp == 5:
+            self.newPhi = self.newPhi/5
+            self.pub_phi.publish(self.newPhi)
+            self.newPhi = 0
+            self.temp = 0
 
     def static_PID(self,msg):
         current_time = rospy.Time.now().to_sec()
 
         self.car_cmd.v = 0
-
-        control_signal_p = rospy.get_param("k") * msg
-
-        control_signal_i = rospy.get_param("Ki") * ((current_time-self.prev_time) * msg + self.total_error)
-
-        control_signal_d = rospy.get_param("Kd") * (msg-self.prev_error)/(current_time-self.prev_time)
+        msg.data = -1*msg.data
+        control_signal_p = rospy.get_param("K") * msg.data
+        control_signal_i = rospy.get_param("Ki") * ((current_time-self.prev_time) * 1*msg.data + self.total_error)
+        control_signal_d = rospy.get_param("Kd") * (msg.data-self.prev_error)/(current_time-self.prev_time)
 
         control_signal = control_signal_p+control_signal_i+control_signal_d
         control_signal_msg = Float32(control_signal)
         self.pub.publish(control_signal_msg)
-        self.prev_error = msg
-        self.total_error = self.total_error + msg
+        self.prev_error = msg.data
+        self.total_error = self.total_error + msg.data
         self.prev_time = current_time
-        self.pub_1.publish(control_signal)
+
+        self.car_cmd.omega = control_signal
+        self.pub_1.publish(self.car_cmd)
 
     def dynamic_PID(self,msg):
         current_time = rospy.Time.now().to_sec()
 
         self.car_cmd.v = rospy.get_param("v")
-
+        msg.data = -1*msg.data
         control_signal_p = rospy.get_param("K") * msg.data
-        control_signal_i = rospy.get_param("Ki") * ((current_time-self.prev_time) * msg.data + self.total_error)
+        control_signal_i = rospy.get_param("Ki") * ((current_time-self.prev_time) * 1*msg.data + self.total_error)
         control_signal_d = rospy.get_param("Kd") * (msg.data-self.prev_error)/(current_time-self.prev_time)
 
         control_signal = control_signal_p+control_signal_i+control_signal_d
