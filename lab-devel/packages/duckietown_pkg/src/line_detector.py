@@ -95,7 +95,7 @@ class ImageProcessor:
     def red_filter(self):
         # CHANGE VALUES IF NEEDED
         #Finds all pixels within the given range. In this scenario its red
-        mask = cv2.inRange(self.hsv_image, (0,110,180), (180,163,255))
+        mask = cv2.inRange(self.hsv_image, (0,101,191), (21,179,255))
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3,3))
         kernel2 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5,5))
         # image_erode = cv2.erode(red_part, kernel)

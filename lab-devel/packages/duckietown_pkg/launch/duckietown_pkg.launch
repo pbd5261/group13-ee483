@@ -1,8 +1,23 @@
 <launch>
 
 <node pkg="duckietown_pkg" name="line_detector" type="line_detector.py"/>
+
+<node pkg="duckietown_pkg" name="lane_control" type="lane_control.py"/>
+
+<node pkg="duckietown_pkg" name="red_stop" type="red_stop.py"/>
+
+
+<param name = "controller_ready" type="string" value = "false"/>
+<param name="K" type="double" value="5.0"/>
+<param name="Ki" type="double" value="0.00"/>
+<param name="Kd" type="double" value="0.1"/>
+<param name="v" type="double" value="0.3"/>
+<param name="stateIsStatic" type="string" value="True"/>
+
+<param name="stop" type="Boolean" value="False"/>
+
 <!-- <node pkg="rqt_image_view" type="rqt_image_view" name="image" args="/image"/>
 <node pkg="rqt_image_view" type="rqt_image_view" name="image_view_cropped" args="/image_cropped"/>
 <node pkg="rqt_image_view" type="rqt_image_view" name="image_white_filter" args="/image_white"/> -->
-
+<!-- <node pkg="duckietown_pkg" name="lane_detector" type="lane_detector.py"/> -->
 </launch>
