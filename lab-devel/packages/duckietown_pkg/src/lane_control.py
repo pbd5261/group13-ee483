@@ -6,12 +6,12 @@ import matplotlib
 import numpy as np
 import os
 from message_filters import ApproximateTimeSynchronizer, Subscriber
-from duckietown_msgs.msg import Segment, SegmentList, Vector2D, LanePose, Twist2DStamped
+from duckietown_msgs.msg import Segment, SegmentList, Vector2D, LanePose, Twist2DStamped, BoolStamped
 from cv_bridge import CvBridge
 from std_srvs.srv import SetBool, SetBoolResponse
 from std_msgs.msg import Float32
 import time 
-
+from message_filters import ApproximateTimeSynchronizer, Subscriber
 
 
 class LaneDetector: 
@@ -24,10 +24,16 @@ class LaneDetector:
         self.car_cmd = Twist2DStamped()
 
         self.state = rospy.get_param("stateIsStatic")
+        phi = Subscriber("/ee483mm13/avg_phi", Float32)
+        stop = Subscriber("/ee483mm13/stop_line_reading", BoolStamped)
+        ats = ApproximateTimeSynchronizer([phi,stop],queue_size=5,slop=0.1)
+        ats.registerCallback(self.dynamic_PID)
         if self.state == "True":
-            rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.static_PID)
-        else:
-            rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.dynamic_PID)
+            ats.registerCallback(self.static_PID)
+        else: 
+            ats.registerCallback(self.dynamic_PID)
+
+
 
         self.pub = rospy.Publisher("control_input", Float32, queue_size=10)
         self.total_error = 0
@@ -74,11 +80,11 @@ class LaneDetector:
         self.car_cmd.omega = control_signal
         self.pub_1.publish(self.car_cmd)
 
-    def dynamic_PID(self,msg):
+    def dynamic_PID(self,msg,msg2):
         current_time = rospy.Time.now().to_sec()
 
 
-        if rospy.get_param("stop") == True:
+        if msg2.data("stop") == True:
             rospy.sleep(5)
         self.car_cmd.v = rospy.get_param("v")
         msg.data = -1*msg.data

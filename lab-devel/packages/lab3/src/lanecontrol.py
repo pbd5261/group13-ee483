@@ -47,8 +47,6 @@ class LaneDetector:
 
 
     def movingAvg(self, phi):
-
-
         self.newPhi = self.newPhi + phi
         self.temp = self.temp + 1
         if self.temp == 5:
