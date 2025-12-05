@@ -35,8 +35,10 @@
         <!-- Lane Following stack -->
         <arg name="lane_following" value="true"/>
 		<!-- The duckiebot lane detector. Initially as true (Active). If you want to use your lane detector, change the value to "false" and start your node in the next group in line 52-->
-        <arg name="/lane_following/line_detection" value="false"/>
+        <arg name="/lane_following/line_detection" value="true"/>
         
+        <arg name="/lane_following/stop_line_filter" value="true"/>
+
 		<arg name="line_detector_param_file_name" value="default" />
         <arg name="/lane_following/ground_projection" value="true"/>
 
@@ -50,17 +52,22 @@
 
     <group ns="$(env VEHICLE_NAME)">
         <!-- UNCOMMENT The line below to start  your lane detection node instead of duckiebots. Update the parameters as needed and make sure to change the /lane_following/line_detection value to false in line 37-->
-		<node pkg = "duckietown_pkg" type = "line_detector.py" name = "line_detection" output = "screen"/>
 
 		<!-- Add your controller and odometry nodes below -->
+
         <node pkg="duckietown_pkg" name="lanecontrol" type="lane_control.py" output = "screen"/>
+        <node pkg="duckietown_pkg" name="stop" type="stop_control.py" output = "screen"/>
+
+
 
         <param name = "controller_ready" type="string" value = "false"/>
-        <param name="K" type="double" value="5.0"/>
+        <param name="K" type="double" value="8.0"/>
         <param name="Ki" type="double" value="0.00"/>
         <param name="Kd" type="double" value="0.1"/>
-        <param name="v" type="double" value="0.3"/>
+        <param name="v" type="double" value="0.25"/>
         <param name="stateIsStatic" type="string" value="False"/>
+        <param name="stop" type="string" value="False"/>
+
 
     </group>
 

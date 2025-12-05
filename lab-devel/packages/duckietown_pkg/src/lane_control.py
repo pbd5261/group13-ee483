@@ -11,7 +11,6 @@ from cv_bridge import CvBridge
 from std_srvs.srv import SetBool, SetBoolResponse
 from std_msgs.msg import Float32
 import time 
-from message_filters import ApproximateTimeSynchronizer, Subscriber
 
 
 class LaneDetector: 
@@ -24,16 +23,8 @@ class LaneDetector:
         self.car_cmd = Twist2DStamped()
 
         self.state = rospy.get_param("stateIsStatic")
-        phi = Subscriber("/ee483mm13/avg_phi", Float32)
-        stop = Subscriber("/ee483mm13/stop_line_reading", BoolStamped)
-        ats = ApproximateTimeSynchronizer([phi,stop],queue_size=5,slop=0.1)
-        ats.registerCallback(self.dynamic_PID)
-        if self.state == "True":
-            ats.registerCallback(self.static_PID)
-        else: 
-            ats.registerCallback(self.dynamic_PID)
-
-
+        rospy.Subscriber("/ee483mm13/avg_phi", Float32, self.dynamic_PID)
+     
 
         self.pub = rospy.Publisher("control_input", Float32, queue_size=10)
         self.total_error = 0
@@ -80,13 +71,14 @@ class LaneDetector:
         self.car_cmd.omega = control_signal
         self.pub_1.publish(self.car_cmd)
 
-    def dynamic_PID(self,msg,msg2):
+    def dynamic_PID(self,msg):            
         current_time = rospy.Time.now().to_sec()
-
-
-        if msg2.data("stop") == True:
-            rospy.sleep(5)
+        rospy.loginfo(rospy.get_param("stop"))
         self.car_cmd.v = rospy.get_param("v")
+        rospy.loginfo(self.car_cmd.v)
+        if rospy.get_param("stop") == "True":
+            self.car_cmd.v = 0
+            rospy.loginfo("hi")
         msg.data = -1*msg.data
         control_signal_p = rospy.get_param("K") * msg.data
         control_signal_i = rospy.get_param("Ki") * ((current_time-self.prev_time) * 1*msg.data + self.total_error)
@@ -101,6 +93,11 @@ class LaneDetector:
 
         self.car_cmd.omega = control_signal
         self.pub_1.publish(self.car_cmd)
+        rospy.loginfo(self.car_cmd)
+        if rospy.get_param("stop") == "True":
+            rospy.sleep(3)
+            rospy.set_param("stop","False")
+        
 
 
 
